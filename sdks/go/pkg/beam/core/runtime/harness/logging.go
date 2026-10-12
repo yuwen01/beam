@@ -21,6 +21,8 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/core/metrics"
@@ -31,11 +33,43 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// minLogSeverityHook sets minSeverity. It is enabled by harnessopts.MinLogSeverity.
+const minLogSeverityHook = "beam:go:hook:logging:minseverity"
+
+// minSeverity is the lowest severity the logger sends to the runner. The zero
+// value, log.SevUnspecified, sends every entry.
+var minSeverity atomic.Int32
+
+func init() {
+	hooks.RegisterHook(minLogSeverityHook, func(opts []string) hooks.Hook {
+		return hooks.Hook{
+			Init: func(ctx context.Context) (context.Context, error) {
+				if len(opts) != 1 {
+					return ctx, fmt.Errorf("expected 1 option, got %v: %v", len(opts), opts)
+				}
+				sev, err := strconv.Atoi(opts[0])
+				if err != nil {
+					return ctx, fmt.Errorf("invalid log severity %q: %w", opts[0], err)
+				}
+				minSeverity.Store(int32(sev))
+				return ctx, nil
+			},
+		}
+	})
+}
+
 type logger struct {
 	out chan<- *fnpb.LogEntry
 }
 
 func (l *logger) Log(ctx context.Context, sev log.Severity, calldepth int, msg string) {
+	// Unspecified entries are sent as INFO, so they are filtered as INFO.
+	if sev == log.SevUnspecified {
+		sev = log.SevInfo
+	}
+	if int32(sev) < minSeverity.Load() {
+		return
+	}
 	now := timestamppb.New(time.Now())
 
 	entry := &fnpb.LogEntry{

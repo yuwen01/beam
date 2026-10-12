@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/core/metrics"
+	"github.com/apache/beam/sdks/v2/go/pkg/beam/core/util/hooks"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/log"
 	fnpb "github.com/apache/beam/sdks/v2/go/pkg/beam/model/fnexecution_v1"
 )
@@ -49,7 +50,7 @@ func TestLogger(t *testing.T) {
 		t.Errorf("incorrect Message: got %v, want %v", got, want)
 	}
 	// This check will fail if the imports change.
-	if got, want := e.GetLogLocation(), "logging_test.go:38"; !strings.HasSuffix(got, want) {
+	if got, want := e.GetLogLocation(), "logging_test.go:39"; !strings.HasSuffix(got, want) {
 		t.Errorf("incorrect LogLocation: got %v, want suffix %v", got, want)
 	}
 	if got, want := e.GetSeverity(), fnpb.LogEntry_Severity_INFO; got != want {
@@ -108,5 +109,49 @@ func TestLogger_connect(t *testing.T) {
 
 	if got, want := count, 10; got != want {
 		t.Errorf("missing messages: got %v, want %v", got, want)
+	}
+}
+
+func TestLogger_minSeverity(t *testing.T) {
+	defer minSeverity.Store(0)
+	ch := make(chan *fnpb.LogEntry, 4)
+	l := logger{out: ch}
+	ctx := context.Background()
+
+	minSeverity.Store(int32(log.SevWarn))
+	l.Log(ctx, log.SevDebug, 0, "debug")
+	l.Log(ctx, log.SevInfo, 0, "info")
+	l.Log(ctx, log.SevUnspecified, 0, "unspecified")
+	l.Log(ctx, log.SevWarn, 0, "warn")
+	l.Log(ctx, log.SevError, 0, "error")
+	close(ch)
+
+	var got []string
+	for e := range ch {
+		got = append(got, e.GetMessage())
+	}
+	if want := []string{"warn", "error"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("logged %v, want %v", got, want)
+	}
+}
+
+func TestMinLogSeverityHook(t *testing.T) {
+	defer minSeverity.Store(0)
+	// The remote logging hook needs a logging endpoint, which this test does not have.
+	hooks.DisableHook(DefaultRemoteLoggingHook)
+	defer hooks.EnableHook(DefaultRemoteLoggingHook)
+	defer hooks.DisableHook(minLogSeverityHook)
+	if err := hooks.EnableHook(minLogSeverityHook, "2"); err != nil {
+		t.Fatal(err)
+	}
+	// As on a worker: hooks reach the harness through the pipeline options.
+	hooks.SerializeHooksToOptions()
+	ctx := context.Background()
+	hooks.DeserializeHooksFromOptions(ctx)
+	if _, err := hooks.RunInitHooks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := log.Severity(minSeverity.Load()), log.SevInfo; got != want {
+		t.Errorf("minSeverity = %v, want %v", got, want)
 	}
 }
