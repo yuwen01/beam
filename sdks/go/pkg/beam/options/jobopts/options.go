@@ -101,6 +101,12 @@ var (
 	// ResourceHints flag takes whole pipeline hints for resources.
 	ResourceHints stringSlice
 
+	// DefaultSdkHarnessLogLevel is the lowest severity of log entries that SDK workers send to the runner.
+	// It matches the default_sdk_harness_log_level option of the Java and Python SDKs.
+	DefaultSdkHarnessLogLevel = flag.String("default_sdk_harness_log_level", "",
+		"The lowest severity of log entries that SDK workers send to the runner: DEBUG, INFO, WARN, ERROR, CRITICAL or OFF. "+
+			"Entries below it are dropped on the worker. If unset, every entry is sent.")
+
 	// ElementProcessingTimeout flag to set the timeout for processing an element in a PTransform operation. If set to -1, there is no timeout.
 	ElementProcessingTimeout = flag.Duration("element_processing_timeout", -1,
 		"The time limit (in minutes) for any PTransform to finish processing a single element. If exceeded, "+

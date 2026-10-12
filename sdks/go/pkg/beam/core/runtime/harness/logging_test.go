@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/apache/beam/sdks/v2/go/pkg/beam"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/core/metrics"
-	"github.com/apache/beam/sdks/v2/go/pkg/beam/core/util/hooks"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/log"
 	fnpb "github.com/apache/beam/sdks/v2/go/pkg/beam/model/fnexecution_v1"
 )
@@ -135,23 +135,41 @@ func TestLogger_minSeverity(t *testing.T) {
 	}
 }
 
-func TestMinLogSeverityHook(t *testing.T) {
+func TestParseLogLevel(t *testing.T) {
+	tests := []struct {
+		level string
+		want  log.Severity
+	}{
+		{"", log.SevUnspecified},
+		{"DEBUG", log.SevDebug},
+		{"trace", log.SevDebug},
+		{"Info", log.SevInfo},
+		{"WARN", log.SevWarn},
+		{"warning", log.SevWarn},
+		{"ERROR", log.SevError},
+		{"CRITICAL", log.SevFatal},
+		{"OFF", logOff},
+	}
+	for _, test := range tests {
+		got, err := parseLogLevel(test.level)
+		if err != nil {
+			t.Errorf("parseLogLevel(%q) error: %v", test.level, err)
+		}
+		if got != test.want {
+			t.Errorf("parseLogLevel(%q) = %v, want %v", test.level, got, test.want)
+		}
+	}
+	if _, err := parseLogLevel("verbose"); err == nil {
+		t.Error("parseLogLevel(\"verbose\") = nil error, want error")
+	}
+}
+
+func TestApplyLogLevelOption(t *testing.T) {
 	defer minSeverity.Store(0)
-	// The remote logging hook needs a logging endpoint, which this test does not have.
-	hooks.DisableHook(DefaultRemoteLoggingHook)
-	defer hooks.EnableHook(DefaultRemoteLoggingHook)
-	defer hooks.DisableHook(minLogSeverityHook)
-	if err := hooks.EnableHook(minLogSeverityHook, "2"); err != nil {
-		t.Fatal(err)
-	}
-	// As on a worker: hooks reach the harness through the pipeline options.
-	hooks.SerializeHooksToOptions()
-	ctx := context.Background()
-	hooks.DeserializeHooksFromOptions(ctx)
-	if _, err := hooks.RunInitHooks(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := log.Severity(minSeverity.Load()), log.SevInfo; got != want {
+	defer beam.PipelineOptions.Set("default_sdk_harness_log_level", "")
+	beam.PipelineOptions.Set("default_sdk_harness_log_level", "warn")
+	applyLogLevelOption(context.Background())
+	if got, want := log.Severity(minSeverity.Load()), log.SevWarn; got != want {
 		t.Errorf("minSeverity = %v, want %v", got, want)
 	}
 }
