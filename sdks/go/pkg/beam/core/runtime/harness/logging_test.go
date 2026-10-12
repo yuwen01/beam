@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/apache/beam/sdks/v2/go/pkg/beam"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/core/metrics"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/log"
 	fnpb "github.com/apache/beam/sdks/v2/go/pkg/beam/model/fnexecution_v1"
@@ -50,7 +49,7 @@ func TestLogger(t *testing.T) {
 		t.Errorf("incorrect Message: got %v, want %v", got, want)
 	}
 	// This check will fail if the imports change.
-	if got, want := e.GetLogLocation(), "logging_test.go:39"; !strings.HasSuffix(got, want) {
+	if got, want := e.GetLogLocation(), "logging_test.go:38"; !strings.HasSuffix(got, want) {
 		t.Errorf("incorrect LogLocation: got %v, want suffix %v", got, want)
 	}
 	if got, want := e.GetSeverity(), fnpb.LogEntry_Severity_INFO; got != want {
@@ -112,13 +111,11 @@ func TestLogger_connect(t *testing.T) {
 	}
 }
 
-func TestLogger_minSeverity(t *testing.T) {
-	defer minSeverity.Store(0)
+func TestLogger_level(t *testing.T) {
 	ch := make(chan *fnpb.LogEntry, 4)
-	l := logger{out: ch}
+	l := logger{out: ch, level: log.SevWarn}
 	ctx := context.Background()
 
-	minSeverity.Store(int32(log.SevWarn))
 	l.Log(ctx, log.SevDebug, 0, "debug")
 	l.Log(ctx, log.SevInfo, 0, "info")
 	l.Log(ctx, log.SevUnspecified, 0, "unspecified")
@@ -148,7 +145,6 @@ func TestParseLogLevel(t *testing.T) {
 		{"warning", log.SevWarn},
 		{"ERROR", log.SevError},
 		{"CRITICAL", log.SevFatal},
-		{"OFF", logOff},
 	}
 	for _, test := range tests {
 		got, err := parseLogLevel(test.level)
@@ -159,17 +155,7 @@ func TestParseLogLevel(t *testing.T) {
 			t.Errorf("parseLogLevel(%q) = %v, want %v", test.level, got, test.want)
 		}
 	}
-	if _, err := parseLogLevel("verbose"); err == nil {
-		t.Error("parseLogLevel(\"verbose\") = nil error, want error")
-	}
-}
-
-func TestApplyLogLevelOption(t *testing.T) {
-	defer minSeverity.Store(0)
-	defer beam.PipelineOptions.Set("default_sdk_harness_log_level", "")
-	beam.PipelineOptions.Set("default_sdk_harness_log_level", "warn")
-	applyLogLevelOption(context.Background())
-	if got, want := log.Severity(minSeverity.Load()), log.SevWarn; got != want {
-		t.Errorf("minSeverity = %v, want %v", got, want)
+	if _, err := parseLogLevel("OFF"); err == nil {
+		t.Error("parseLogLevel(\"OFF\") = nil error, want error")
 	}
 }

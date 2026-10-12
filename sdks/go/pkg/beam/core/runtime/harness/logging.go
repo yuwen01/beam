@@ -22,7 +22,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/apache/beam/sdks/v2/go/pkg/beam"
@@ -34,16 +33,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// minSeverity is the lowest severity the logger sends to the runner. The zero
-// value, log.SevUnspecified, sends every entry. It is set from the
-// default_sdk_harness_log_level pipeline option when remote logging starts.
-var minSeverity atomic.Int32
-
-// logOff is a minimum severity above every real severity, so nothing is sent.
-const logOff = log.SevFatal + 1
-
-// parseLogLevel converts a default_sdk_harness_log_level value to a minimum
-// severity. It accepts the level names of the Java and Python SDKs.
+// parseLogLevel converts a default_sdk_harness_log_level value to the lowest
+// severity the logger sends. It accepts the level names of the Java and Python
+// SDKs. An empty value sends every entry.
 func parseLogLevel(level string) (log.Severity, error) {
 	switch strings.ToUpper(strings.TrimSpace(level)) {
 	case "":
@@ -58,25 +50,16 @@ func parseLogLevel(level string) (log.Severity, error) {
 		return log.SevError, nil
 	case "CRITICAL", "FATAL":
 		return log.SevFatal, nil
-	case "OFF":
-		return logOff, nil
 	default:
 		return log.SevUnspecified, fmt.Errorf("unknown log level %q", level)
 	}
 }
 
-// applyLogLevelOption sets minSeverity from the default_sdk_harness_log_level
-// pipeline option. An unknown value is reported and every entry is sent.
-func applyLogLevelOption(ctx context.Context) {
-	sev, err := parseLogLevel(beam.PipelineOptions.Get("default_sdk_harness_log_level"))
-	if err != nil {
-		log.Warnf(ctx, "Ignoring default_sdk_harness_log_level: %v", err)
-	}
-	minSeverity.Store(int32(sev))
-}
-
 type logger struct {
 	out chan<- *fnpb.LogEntry
+	// level is the severity cutoff, as in log.Standard. By default all
+	// entries are sent.
+	level log.Severity
 }
 
 func (l *logger) Log(ctx context.Context, sev log.Severity, calldepth int, msg string) {
@@ -84,7 +67,7 @@ func (l *logger) Log(ctx context.Context, sev log.Severity, calldepth int, msg s
 	if sev == log.SevUnspecified {
 		sev = log.SevInfo
 	}
-	if int32(sev) < minSeverity.Load() {
+	if sev < l.level {
 		return
 	}
 	now := timestamppb.New(time.Now())
@@ -152,8 +135,11 @@ func init() {
 // try to reconnect, if a connection goes bad. Falls back to stdout.
 func setupRemoteLogging(ctx context.Context, endpoint string) {
 	buf := make(chan *fnpb.LogEntry, 2000)
-	log.SetLogger(&logger{out: buf})
-	applyLogLevelOption(ctx)
+	level, err := parseLogLevel(beam.PipelineOptions.Get("default_sdk_harness_log_level"))
+	log.SetLogger(&logger{out: buf, level: level})
+	if err != nil {
+		log.Warnf(ctx, "Ignoring default_sdk_harness_log_level: %v", err)
+	}
 
 	w := &remoteWriter{buffer: buf, endpoint: endpoint}
 	go w.Run(ctx)

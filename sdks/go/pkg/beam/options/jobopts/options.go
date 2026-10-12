@@ -104,7 +104,7 @@ var (
 	// DefaultSdkHarnessLogLevel is the lowest severity of log entries that SDK workers send to the runner.
 	// It matches the default_sdk_harness_log_level option of the Java and Python SDKs.
 	DefaultSdkHarnessLogLevel = flag.String("default_sdk_harness_log_level", "",
-		"The lowest severity of log entries that SDK workers send to the runner: DEBUG, INFO, WARN, ERROR, CRITICAL or OFF. "+
+		"The lowest severity of log entries that SDK workers send to the runner: DEBUG, INFO, WARN, ERROR or CRITICAL. "+
 			"Entries below it are dropped on the worker. If unset, every entry is sent.")
 
 	// ElementProcessingTimeout flag to set the timeout for processing an element in a PTransform operation. If set to -1, there is no timeout.
